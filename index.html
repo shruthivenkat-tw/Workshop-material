@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trend Lab — Ambient Teammate</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --accent: #38bdf8;
+      --text: #f8fafc;
+      --text-dim: #94a3b8;
+      --border: #334155;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 650px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+
+    .header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+
+    .header h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin: 0 0 8px 0;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .context-pill {
+      display: inline-block;
+      background: var(--border);
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      padding: 4px 12px;
+      border-radius: 9999px;
+    }
+
+    .controls {
+      text-align: center;
+      margin: 32px 0;
+    }
+
+    button {
+      background: var(--accent);
+      color: #0f172a;
+      font-size: 1.1rem;
+      font-weight: 600;
+      padding: 14px 28px;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    button:hover { opacity: 0.9; transform: translateY(-1px); }
+    button:disabled { background: var(--border); color: var(--text-dim); cursor: not-allowed; transform: none; }
+
+    .status {
+      margin-top: 12px;
+      font-size: 0.9rem;
+      color: var(--text-dim);
+    }
+
+    .card {
+      background: #0f172a;
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 24px;
+      margin-top: 24px;
+      display: none;
+      animation: fadeIn 0.4s ease-out;
+    }
+
+    .card-tag {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 8px;
+    }
+
+    .card-body {
+      font-size: 1.15rem;
+      line-height: 1.5;
+      margin-bottom: 12px;
+    }
+
+    .card-reason {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <h1>Trend Lab — Ambient Teammate</h1>
+      <span class="context-pill" id="contextPill">Acme Retail • Hyper-Local Micro-Fulfillment</span>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn">Start Ambient Listening</button>
+      <div class="status" id="statusText">Press Start to listen to table audio</div>
+    </div>
+
+    <div class="card" id="thoughtCard">
+      <div class="card-tag">⚡ Ambient Thought Card</div>
+      <div class="card-body" id="cardBody"></div>
+      <div class="card-reason" id="cardReason"></div>
+    </div>
+  </div>
+
+  <script>
+    // Config values
+    const COMPANY_NAME = "Acme Retail";
+    const SHIFT_TREND = "Hyper-Local Micro-Fulfillment";
+    const CHALLENGE_BRIEF = "Redesign the physical store experience to leverage local delivery hubs.";
+    const CHECK_INTERVAL_MS = 120000; // Evaluate every 2 minutes
+
+    document.getElementById('contextPill').innerText = `${COMPANY_NAME} • ${SHIFT_TREND}`;
+
+    const SYSTEM_INSTRUCTION = `
+You are an ambient AI teammate participating in a live strategy session ("Concept Generation").
+You are listening directly to raw audio from a table discussion.
+
+Context:
+- Target Company: ${COMPANY_NAME}
+- Strategic Shift / Trend: ${SHIFT_TREND}
+- Challenge Brief: ${CHALLENGE_BRIEF}
+
+Evaluation Rules:
+1. STAY SILENT ("should_interject": false) IF the team is actively generating good ideas, progressing naturally, or if your contribution would just be generic agreement.
+2. INTERJECT ("should_interject": true) ONLY IF the team is stuck/stalled, if you can offer a novel twist grounded in ${SHIFT_TREND}, or if they drifted off-topic.
+
+Contribution Rules:
+- Under 35 words.
+- MUST explicitly tie ${SHIFT_TREND} or ${COMPANY_NAME} to the conversation.
+`;
+
+    const RESPONSE_SCHEMA = {
+      type: "OBJECT",
+      properties: {
+        reasoning: { type: "STRING" },
+        should_interject: { type: "BOOLEAN" },
+        contribution_text: { type: "STRING" }
+      },
+      required: ["reasoning", "should_interject", "contribution_text"]
+    };
+
+    let mediaRecorder;
+    let audioChunks = [];
+    let isListening = false;
+
+    const startBtn = document.getElementById('startBtn');
+    const statusText = document.getElementById('statusText');
+    const thoughtCard = document.getElementById('thoughtCard');
+    const cardBody = document.getElementById('cardBody');
+    const cardReason = document.getElementById('cardReason');
+
+    startBtn.addEventListener('click', async () => {
+      if (isListening) return;
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        mediaRecorder.start();
+        isListening = true;
+
+        startBtn.disabled = true;
+        startBtn.innerText = "Listening...";
+        statusText.innerText = "Ambient Mode active. Listening continuously...";
+
+        setInterval(processAudioBuffer, CHECK_INTERVAL_MS);
+
+      } catch (err) {
+        alert("Microphone access is required for Ambient Mode.");
+        console.error(err);
+      }
+    });
+
+    async function processAudioBuffer() {
+      if (!isListening || mediaRecorder.state !== "recording") return;
+
+      statusText.innerText = "Evaluating table discussion with Gemini...";
+
+      mediaRecorder.stop();
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        audioChunks = [];
+        mediaRecorder.start();
+
+        const base64Audio = await blobToBase64(audioBlob);
+
+        try {
+          // Send request securely to Vercel backend proxy
+          const res = await fetch('/api/evaluate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              audioBase64: base64Audio,
+              systemInstruction: SYSTEM_INSTRUCTION,
+              schema: RESPONSE_SCHEMA
+            })
+          });
+
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+
+          const responseText = data.candidates[0].content.parts[0].text;
+          const result = JSON.parse(responseText);
+
+          if (result.should_interject) {
+            cardBody.innerText = `"${result.contribution_text}"`;
+            cardReason.innerText = `Why interjected: ${result.reasoning}`;
+            thoughtCard.style.display = "block";
+          } else {
+            console.log("Decision: Stay Silent.", result.reasoning);
+          }
+        } catch (err) {
+          console.error("Evaluation Error:", err);
+        }
+
+        statusText.innerText = "Ambient Mode active. Listening...";
+      };
+    }
+
+    function blobToBase64(blob) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result.split(',')[1]);
+        reader.readAsDataURL(blob);
+      });
+    }
+  </script>
+</body>
+</html>
